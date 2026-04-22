@@ -1,7 +1,8 @@
 """BM25 candidate generator over product names.
 
-Simple whitespace tokenizer — for production you'd plug a proper tokenizer
-(lowercasing, stripping punctuation, handling units like '460ml').
+The tokenizer preserves unit expressions — both integer-unit ("460ml", "300W")
+and decimal-unit ("1.5L", "2.5kg") — as single tokens.  A naive alphanumeric
+split would break "1.5L" into ["1", "5l"], losing the quantity+unit signal.
 """
 
 from __future__ import annotations
@@ -10,7 +11,10 @@ import re
 
 from rank_bm25 import BM25Okapi
 
-_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+# Match decimal-or-integer number immediately followed by a unit string first,
+# then fall back to any alphanumeric run.  Order matters: the unit branch must
+# come before the plain-alphanumeric branch so "1.5L" is captured whole.
+_TOKEN_RE = re.compile(r"\d+(?:\.\d+)?[A-Za-z]+|[A-Za-z0-9]+")
 
 
 def tokenize(text: str) -> list[str]:
