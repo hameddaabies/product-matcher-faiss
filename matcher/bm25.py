@@ -3,6 +3,12 @@
 The tokenizer preserves unit expressions — both integer-unit ("460ml", "300W")
 and decimal-unit ("1.5L", "2.5kg") — as single tokens.  A naive alphanumeric
 split would break "1.5L" into ["1", "5l"], losing the quantity+unit signal.
+
+It also collapses a number separated from a known unit by whitespace
+("460 ml", "1.5 L", "400 grams") into the same single token, so retailers
+that write "460 ml" match retailers that write "460ML".  Only a curated
+allowlist of unit suffixes is collapsed; arbitrary "<number> <word>"
+sequences like "100 Pack" are left split.
 """
 
 from __future__ import annotations
@@ -11,6 +17,23 @@ import re
 
 from rank_bm25 import BM25Okapi
 
+# Curated unit allowlist.  Kept conservative: ambiguous bare letters like
+# "m" (meter / million) and "in" (preposition) are intentionally excluded.
+_UNITS = (
+    "ml", "l", "cl", "liter", "liters", "litre", "litres",
+    "kg", "g", "mg", "gram", "grams", "kilo", "kilos",
+    "oz", "lb", "lbs", "pound", "pounds",
+    "w", "kw", "mw", "kwh", "wh", "mah", "ah",
+    "hz", "khz", "mhz", "ghz",
+    "cm", "mm", "ft", "inch", "inches",
+)
+# Sort by length descending so the regex prefers "liters" over "l".
+_UNIT_ALT = "|".join(sorted(_UNITS, key=len, reverse=True))
+_UNIT_SPACE_RE = re.compile(
+    rf"(\d+(?:\.\d+)?)\s+({_UNIT_ALT})\b",
+    re.IGNORECASE,
+)
+
 # Match decimal-or-integer number immediately followed by a unit string first,
 # then fall back to any alphanumeric run.  Order matters: the unit branch must
 # come before the plain-alphanumeric branch so "1.5L" is captured whole.
@@ -18,7 +41,8 @@ _TOKEN_RE = re.compile(r"\d+(?:\.\d+)?[A-Za-z]+|[A-Za-z0-9]+")
 
 
 def tokenize(text: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_RE.findall(text)]
+    normalized = _UNIT_SPACE_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}", text)
+    return [t.lower() for t in _TOKEN_RE.findall(normalized)]
 
 
 class Bm25Index:
