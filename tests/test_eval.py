@@ -4,7 +4,9 @@ These don't load an embedder — they exercise the pure ranking-metric
 functions on hand-rolled retrieved-id lists.
 """
 
-from matcher.eval import precision_at_1, recall_at_k
+from dataclasses import dataclass
+
+from matcher.eval import precision_at_1, recall_at_k, sweep_alpha
 
 
 def test_precision_at_1_hit():
@@ -37,3 +39,47 @@ def test_recall_at_k_truncates_to_window():
     """Recall at k=1 only counts the very first hit."""
     assert recall_at_k(["a2", "a1"], "a1", k=1) == 0.0
     assert recall_at_k(["a1", "a2"], "a1", k=1) == 1.0
+
+
+# ---------------------------------------------------------------------------
+# sweep_alpha — exercise without loading an embedder via a stub matcher.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _Hit:
+    id: str
+
+
+class _StubMatcher:
+    """Returns a different ranking at each alpha so the sweep is observable."""
+
+    def __init__(self, rankings: dict[float, list[str]]) -> None:
+        self.alpha = 0.0
+        self._rankings = rankings
+
+    def match(self, query: str, top_n: int = 5):
+        return [_Hit(pid) for pid in self._rankings[self.alpha][:top_n]]
+
+
+def test_sweep_alpha_reports_metrics_per_alpha():
+    rankings = {
+        0.0: ["a1", "a2", "a3"],   # gold at rank 1 → p@1=1.0
+        0.5: ["a2", "a1", "a3"],   # gold at rank 2 → p@1=0.0, r@5=1.0
+        1.0: ["a3", "a4", "a5"],   # gold absent    → p@1=0.0, r@5=0.0
+    }
+    matcher = _StubMatcher(rankings)
+    rows = sweep_alpha(
+        matcher,
+        queries={"q1": "anything"},
+        gold={"q1": "a1"},
+        alphas=[0.0, 0.5, 1.0],
+    )
+    assert rows == [(0.0, 1.0, 1.0), (0.5, 0.0, 1.0), (1.0, 0.0, 0.0)]
+
+
+def test_sweep_alpha_mutates_matcher_alpha():
+    """The helper must actually flip matcher.alpha — that's how it tunes."""
+    matcher = _StubMatcher({0.25: ["a1"], 0.75: ["a1"]})
+    sweep_alpha(matcher, queries={"q": "x"}, gold={"q": "a1"}, alphas=[0.25, 0.75])
+    assert matcher.alpha == 0.75
