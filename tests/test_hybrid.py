@@ -96,6 +96,34 @@ def test_tokenize_does_not_merge_non_unit_word():
     assert "100pack" not in tokens
 
 
+# ---------------------------------------------------------------------------
+# Unicode letters — European catalogs (Dutch, French, Spanish, German)
+# ---------------------------------------------------------------------------
+
+
+def test_tokenize_preserves_latin_diacritics():
+    """'Crème brûlée' must stay two tokens, not shatter into ASCII fragments."""
+    assert tokenize("Crème brûlée 250g") == ["crème", "brûlée", "250g"]
+
+
+def test_tokenize_preserves_tilde_n():
+    """'Jalapeño' must survive as one token (not 'jalape' + 'o')."""
+    tokens = tokenize("Jalapeño chips")
+    assert "jalapeño" in tokens
+    assert "jalape" not in tokens
+
+
+def test_bm25_matches_across_diacritic_variant():
+    """Query without diacritics should still find candidate with diacritics
+    when other tokens overlap — and exact-diacritic queries must not collapse
+    to a different product just because the ASCII fallback ranked higher."""
+    ids = ["a", "b"]
+    names = ["Crème brûlée dessert 250g", "Vanilla pudding 250g"]
+    idx = Bm25Index(ids, names)
+    top = idx.search("Crème brûlée 250g", k=1)
+    assert top[0][0] == "a"
+
+
 def test_bm25_matches_across_unit_whitespace_variants():
     """Cross-retailer query: '460 ml' (retailer B) must hit '460ML' (retailer A)."""
     ids = ["a", "b", "c"]

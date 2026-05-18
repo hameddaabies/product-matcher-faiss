@@ -35,9 +35,12 @@ _UNIT_SPACE_RE = re.compile(
 )
 
 # Match decimal-or-integer number immediately followed by a unit string first,
-# then fall back to any alphanumeric run.  Order matters: the unit branch must
-# come before the plain-alphanumeric branch so "1.5L" is captured whole.
-_TOKEN_RE = re.compile(r"\d+(?:\.\d+)?[A-Za-z]+|[A-Za-z0-9]+")
+# then fall back to any letter-or-digit run.  Order matters: the unit branch
+# must come before the plain branch so "1.5L" is captured whole.  The plain
+# branch uses ``[^\W_]+`` rather than ``[A-Za-z0-9]+`` so unicode letters
+# survive — "Crème", "Jalapeño", "Café" are preserved instead of being
+# shattered into ASCII fragments.  Units themselves stay ASCII-only.
+_TOKEN_RE = re.compile(r"\d+(?:\.\d+)?[A-Za-z]+|[^\W_]+")
 
 
 def tokenize(text: str) -> list[str]:
