@@ -6,7 +6,7 @@ functions on hand-rolled retrieved-id lists.
 
 from dataclasses import dataclass
 
-from matcher.eval import precision_at_1, recall_at_k, sweep_alpha
+from matcher.eval import pr_curve, precision_at_1, recall_at_k, sweep_alpha
 
 
 def test_precision_at_1_hit():
@@ -83,3 +83,32 @@ def test_sweep_alpha_mutates_matcher_alpha():
     matcher = _StubMatcher({0.25: ["a1"], 0.75: ["a1"]})
     sweep_alpha(matcher, queries={"q": "x"}, gold={"q": "a1"}, alphas=[0.25, 0.75])
     assert matcher.alpha == 0.75
+
+
+# ---------------------------------------------------------------------------
+# pr_curve — accept/reject threshold sweep for the match decision.
+# ---------------------------------------------------------------------------
+
+
+def test_pr_curve_recall_drops_as_threshold_rises():
+    """Raising the accept threshold drops a correct-but-low-score match."""
+    preds = [(0.9, True), (0.4, True)]  # two correct top-1s, different scores
+    rows = pr_curve(preds, [0.3, 0.5])
+    assert rows == [(0.3, 1.0, 1.0), (0.5, 1.0, 0.5)]
+
+
+def test_pr_curve_precision_penalizes_accepted_wrong_match():
+    """A wrong top-1 above threshold is a false positive → precision 0.5."""
+    rows = pr_curve([(0.8, True), (0.8, False)], [0.5])
+    assert rows == [(0.5, 0.5, 0.5)]
+
+
+def test_pr_curve_precision_is_one_when_nothing_accepted():
+    """High-threshold tail: no accepts → vacuous precision 1.0, recall 0.0."""
+    rows = pr_curve([(0.4, True), (0.3, False)], [0.9])
+    assert rows == [(0.9, 1.0, 0.0)]
+
+
+def test_pr_curve_empty_predictions():
+    rows = pr_curve([], [0.5])
+    assert rows == [(0.5, 1.0, 0.0)]

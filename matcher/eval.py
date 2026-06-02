@@ -62,6 +62,40 @@ def sweep_alpha(
     return rows
 
 
+def pr_curve(
+    scored_predictions: list[tuple[float, bool]],
+    thresholds: Iterable[float],
+) -> list[tuple[float, float, float]]:
+    """Precision/recall of the accept-the-top-1 decision over a threshold sweep.
+
+    Each entry of ``scored_predictions`` is one ``(top1_score, is_correct)``
+    pair per query that *has* a gold match: ``top1_score`` is the matcher's
+    score for its rank-1 candidate, ``is_correct`` whether that candidate is
+    the gold match.  For a threshold ``t`` the matcher *accepts* its top-1 iff
+    ``top1_score >= t``, giving:
+
+      * TP — accepted and correct
+      * FP — accepted but wrong
+      * FN — rejected (a gold match existed but we declined to commit)
+
+    Returns ``(threshold, precision, recall)`` per threshold, where
+    ``precision = TP / (TP + FP)`` and ``recall = TP / (queries with gold)``.
+    Precision is reported as 1.0 when nothing is accepted (vacuously no wrong
+    accepts) so the high-threshold tail of the curve is well-defined.  This is
+    the tool the README's "pick the threshold from a labelled set" note needs.
+    """
+    total_with_gold = len(scored_predictions)
+    rows: list[tuple[float, float, float]] = []
+    for t in thresholds:
+        tp = sum(1 for s, correct in scored_predictions if s >= t and correct)
+        fp = sum(1 for s, correct in scored_predictions if s >= t and not correct)
+        accepted = tp + fp
+        precision = tp / accepted if accepted else 1.0
+        recall = tp / total_with_gold if total_with_gold else 0.0
+        rows.append((t, precision, recall))
+    return rows
+
+
 def _load(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -83,16 +117,22 @@ def main() -> None:
     p1_total = 0.0
     r5_total = 0.0
     n = 0
+    top1: list[tuple[float, bool]] = []
     for query_id, gold_id in gold.items():
         hits = matcher.match(name_by_b[query_id], top_n=5)
         retrieved = [h.id for h in hits]
         p1_total += precision_at_1(retrieved, gold_id)
         r5_total += recall_at_k(retrieved, gold_id, 5)
+        top1.append((hits[0].score, hits[0].id == gold_id) if hits else (0.0, False))
         n += 1
 
     print(f"queries:     {n}")
     print(f"precision@1: {p1_total / n:.3f}")
     print(f"recall@5:    {r5_total / n:.3f}")
+
+    print("\nthreshold  precision  recall   (accept top-1 iff score >= threshold)")
+    for t, prec, rec in pr_curve(top1, [i / 10 for i in range(11)]):
+        print(f"  {t:.1f}       {prec:.3f}     {rec:.3f}")
 
 
 if __name__ == "__main__":
