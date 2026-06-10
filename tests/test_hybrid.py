@@ -4,6 +4,7 @@ For the embedding-dependent tests, run the demo script.
 """
 
 from matcher.bm25 import Bm25Index, tokenize
+from matcher.hybrid import MatchHit, accept_top1
 
 
 def test_tokenize_basic():
@@ -137,3 +138,36 @@ def test_bm25_matches_across_unit_whitespace_variants():
     assert top[0][0] == "a", (
         f"Expected '460 ml' query to rank '460ML' candidate first, got '{top[0][0]}'"
     )
+
+
+# ---------------------------------------------------------------------------
+# accept_top1 — the threshold-gated match/no-match decision.
+#
+# Tested on stub MatchHits so the accept/decline boundary is exercised
+# without loading an embedder; HybridMatcher.best_match() is a thin wrapper
+# over match() + this helper.
+# ---------------------------------------------------------------------------
+
+
+def _hit(pid: str, score: float) -> MatchHit:
+    return MatchHit(id=pid, name=pid, score=score, bm25_score=0.0, cosine_score=0.0)
+
+
+def test_accept_top1_returns_top_when_above_threshold():
+    accepted = accept_top1([_hit("a", 0.9), _hit("b", 0.4)], threshold=0.7)
+    assert accepted is not None and accepted.id == "a"
+
+
+def test_accept_top1_declines_when_below_threshold():
+    """A nearest neighbour that doesn't clear the bar is no match, not a forced hit."""
+    assert accept_top1([_hit("a", 0.5)], threshold=0.7) is None
+
+
+def test_accept_top1_threshold_is_inclusive():
+    """score == threshold accepts, matching pr_curve's `>= t` accept rule."""
+    accepted = accept_top1([_hit("a", 0.7)], threshold=0.7)
+    assert accepted is not None and accepted.id == "a"
+
+
+def test_accept_top1_empty_candidates_declines():
+    assert accept_top1([], threshold=0.0) is None

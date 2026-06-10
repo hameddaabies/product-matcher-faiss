@@ -20,6 +20,21 @@ class MatchHit:
     cosine_score: float
 
 
+def accept_top1(hits: list[MatchHit], threshold: float) -> MatchHit | None:
+    """Apply the accept/decline decision to a *ranked* candidate list.
+
+    Returns the top-ranked hit when its score clears ``threshold`` (inclusive),
+    else ``None`` — modelling "no confident match exists in the catalog" rather
+    than forcing the query onto its nearest neighbour. ``hits`` must already be
+    sorted best-first (as :meth:`HybridMatcher.match` returns them); only the
+    rank-1 candidate is considered, mirroring ``matcher.eval.pr_curve``.
+    """
+    if not hits:
+        return None
+    top = hits[0]
+    return top if top.score >= threshold else None
+
+
 class HybridMatcher:
     """Wraps embedding + HNSW + BM25 into a single match() call."""
 
@@ -68,3 +83,14 @@ class HybridMatcher:
             )
         hits.sort(key=lambda h: h.score, reverse=True)
         return hits[:top_n]
+
+    def best_match(self, query: str, threshold: float = 0.0) -> MatchHit | None:
+        """Return the single best candidate, or ``None`` if it scores below ``threshold``.
+
+        The first-class accept/decline decision the README's step 5 describes:
+        tune ``threshold`` from a labelled PR sweep (``python -m matcher.eval``),
+        then call this for a committed match-or-nothing answer instead of an
+        always-populated top-N list. Default ``threshold=0.0`` accepts any
+        non-empty result, preserving the old "always return the nearest" shape.
+        """
+        return accept_top1(self.match(query, top_n=1), threshold)

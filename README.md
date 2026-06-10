@@ -76,7 +76,7 @@ product-matcher-faiss/
 - **Embedding model** — `all-MiniLM-L6-v2` is a reasonable default. For non-English catalogs, use `paraphrase-multilingual-MiniLM-L12-v2`. For premium accuracy, `all-mpnet-base-v2` (slower, 768-dim).
 - **HNSW parameters** — `M=32, efConstruction=200, efSearch=64` is a solid default for <1M items. Bump `efSearch` to trade latency for recall.
 - **BM25 weight** — the hybrid score is `α·cosine + (1-α)·bm25_norm`. Start at `α=0.5`. Raise it for paraphrase-heavy domains (apparel descriptions), lower it for spec-heavy domains (electronics).
-- **Threshold** — pick it from a hand-labelled validation set, not a default. Wrong defaults cause silent recall / precision cliffs. `python -m matcher.eval` prints a precision/recall curve over the accept threshold to read the right operating point off.
+- **Threshold** — pick it from a hand-labelled validation set, not a default. Wrong defaults cause silent recall / precision cliffs. `python -m matcher.eval` prints a precision/recall curve over the accept threshold to read the right operating point off. Then apply it with `HybridMatcher.best_match(query, threshold)`, which returns the top candidate or `None` when nothing clears the bar.
 
 ## What this isn't
 
