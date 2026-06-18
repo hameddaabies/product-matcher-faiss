@@ -6,7 +6,15 @@ functions on hand-rolled retrieved-id lists.
 
 from dataclasses import dataclass
 
-from matcher.eval import pr_curve, precision_at_1, recall_at_k, sweep_alpha
+import pytest
+
+from matcher.eval import (
+    best_threshold,
+    pr_curve,
+    precision_at_1,
+    recall_at_k,
+    sweep_alpha,
+)
 
 
 def test_precision_at_1_hit():
@@ -112,3 +120,35 @@ def test_pr_curve_precision_is_one_when_nothing_accepted():
 def test_pr_curve_empty_predictions():
     rows = pr_curve([], [0.5])
     assert rows == [(0.5, 1.0, 0.0)]
+
+
+# ---------------------------------------------------------------------------
+# best_threshold — collapse the PR sweep into one recommended operating point.
+# ---------------------------------------------------------------------------
+
+
+def test_best_threshold_picks_f1_maximizing_row():
+    """The interior threshold with balanced P/R beats the lopsided endpoints."""
+    rows = [(0.3, 0.5, 1.0), (0.5, 1.0, 1.0), (0.9, 1.0, 0.5)]
+    t, f1 = best_threshold(rows)
+    assert t == 0.5
+    assert f1 == 1.0
+
+
+def test_best_threshold_breaks_ties_toward_higher_threshold():
+    """Equal F1 → prefer the more conservative (higher-precision) cutoff."""
+    rows = [(0.2, 0.5, 1.0), (0.7, 0.5, 1.0)]  # identical F1 at both rows
+    t, _ = best_threshold(rows)
+    assert t == 0.7
+
+
+def test_best_threshold_zero_f1_when_nothing_accepted():
+    """High-threshold tail (recall 0) is F1-undefined → scored as 0.0, not a div-by-zero."""
+    t, f1 = best_threshold([(0.9, 1.0, 0.0)])
+    assert t == 0.9
+    assert f1 == 0.0
+
+
+def test_best_threshold_empty_sweep_raises():
+    with pytest.raises(ValueError):
+        best_threshold([])

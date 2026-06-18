@@ -96,6 +96,35 @@ def pr_curve(
     return rows
 
 
+def best_threshold(
+    pr_rows: list[tuple[float, float, float]],
+) -> tuple[float, float]:
+    """Pick the F1-maximizing accept threshold from a :func:`pr_curve` sweep.
+
+    Collapses the precision/recall sweep into a single recommended operating
+    point: the threshold whose ``(precision, recall)`` maximizes the harmonic
+    mean ``F1 = 2·P·R / (P + R)``. Ties break toward the *higher* threshold,
+    preferring the more conservative (higher-precision) accept rule when two
+    thresholds score equally.
+
+    Rows where ``precision + recall == 0`` score ``F1 = 0.0`` (the metric is
+    undefined there — typically the high-threshold tail that accepts nothing).
+    Returns ``(threshold, f1)``. Raises ``ValueError`` on an empty sweep, since
+    there is then no operating point to choose.
+    """
+    if not pr_rows:
+        raise ValueError("pr_rows is empty; run pr_curve over a non-empty threshold set")
+    best_t = pr_rows[0][0]
+    best_f1 = -1.0
+    for t, precision, recall in pr_rows:
+        denom = precision + recall
+        f1 = 2.0 * precision * recall / denom if denom else 0.0
+        if f1 > best_f1 or (f1 == best_f1 and t >= best_t):
+            best_f1 = f1
+            best_t = t
+    return best_t, best_f1
+
+
 def _load(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -130,9 +159,13 @@ def main() -> None:
     print(f"precision@1: {p1_total / n:.3f}")
     print(f"recall@5:    {r5_total / n:.3f}")
 
+    curve = pr_curve(top1, [i / 10 for i in range(11)])
     print("\nthreshold  precision  recall   (accept top-1 iff score >= threshold)")
-    for t, prec, rec in pr_curve(top1, [i / 10 for i in range(11)]):
+    for t, prec, rec in curve:
         print(f"  {t:.1f}       {prec:.3f}     {rec:.3f}")
+
+    rec_t, rec_f1 = best_threshold(curve)
+    print(f"\nrecommended threshold: {rec_t:.1f}  (F1={rec_f1:.3f})")
 
 
 if __name__ == "__main__":
