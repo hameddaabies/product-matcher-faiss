@@ -7,6 +7,7 @@ sentence-transformers being downloaded.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from matcher.index import HnswIndex
 
@@ -50,3 +51,12 @@ def test_load_recovers_ids_in_original_order(tmp_path):
 
     restored = HnswIndex.load(path)
     assert restored._ids == ids
+
+
+def test_add_rejects_ids_vecs_count_mismatch():
+    """Fewer ids than vectors must fail fast, not silently corrupt the row->id map."""
+    dim = 8
+    vecs = _make_unit_vecs(4, dim)
+    idx = HnswIndex(dim)
+    with pytest.raises(AssertionError, match="count mismatch"):
+        idx.add(["only", "three", "ids"], vecs)

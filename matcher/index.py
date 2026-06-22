@@ -29,6 +29,9 @@ class HnswIndex:
         self._ids: list[str] = []
 
     def add(self, ids: list[str], vecs: np.ndarray) -> None:
+        assert len(ids) == vecs.shape[0], (
+            f"ids/vecs count mismatch: {len(ids)} ids vs {vecs.shape[0]} vecs"
+        )
         assert vecs.shape[1] == self.dim, f"vec dim {vecs.shape[1]} != {self.dim}"
         self.index.add(vecs)
         self._ids.extend(ids)
