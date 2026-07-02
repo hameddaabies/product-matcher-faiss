@@ -14,6 +14,7 @@ sequences like "100 Pack" are left split.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from rank_bm25 import BM25Okapi
 
@@ -44,6 +45,14 @@ _TOKEN_RE = re.compile(r"\d+(?:\.\d+)?[A-Za-z]+|[^\W_]+")
 
 
 def tokenize(text: str) -> list[str]:
+    # Fold to NFC first: an accented letter can arrive either precomposed
+    # ("é" = U+00E9) or decomposed ("e" + U+0301 combining accent).  The two
+    # are visually identical but byte-different, and the combining mark is not
+    # a word character — so decomposed "Crème" would tokenize to
+    # ["cre", "me"] (mark splits the word and the accent is dropped) while the
+    # precomposed form yields ["crème"].  Two retailers on different
+    # normalization forms would then never match; NFC makes the split stable.
+    text = unicodedata.normalize("NFC", text)
     normalized = _UNIT_SPACE_RE.sub(lambda m: f"{m.group(1)}{m.group(2)}", text)
     return [t.lower() for t in _TOKEN_RE.findall(normalized)]
 

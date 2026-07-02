@@ -3,6 +3,8 @@
 For the embedding-dependent tests, run the demo script.
 """
 
+import unicodedata
+
 from matcher.bm25 import Bm25Index, tokenize
 from matcher.hybrid import MatchHit, accept_top1
 
@@ -123,6 +125,41 @@ def test_bm25_matches_across_diacritic_variant():
     idx = Bm25Index(ids, names)
     top = idx.search("Crème brûlée 250g", k=1)
     assert top[0][0] == "a"
+
+
+def test_tokenize_is_unicode_normalization_invariant():
+    """Decomposed (NFD) and precomposed (NFC) spellings tokenize identically.
+
+    An accent can arrive as one codepoint ("é" = U+00E9) or as
+    base+combining mark ("e" + U+0301). The two render the same but are
+    byte-different, and the combining mark is not a word char — so without NFC
+    folding the decomposed form would both split the word and drop the accent.
+    """
+    base = "Crème caramel 250g"  # precomposed è
+    nfd = unicodedata.normalize("NFD", base)
+    nfc = unicodedata.normalize("NFC", base)
+    assert nfc != nfd  # the two inputs really are byte-different
+    assert tokenize(nfd) == tokenize(nfc)  # ...but must tokenize the same
+    assert tokenize(nfd) == ["crème", "caramel", "250g"]
+
+
+def test_bm25_matches_across_unicode_normalization_variants():
+    """A decomposed-form query must still hit its precomposed-form catalog twin.
+
+    Models two retailers that emit the same product name under different
+    Unicode normalization forms — the cross-catalog case this repo targets.
+    """
+    ids = ["a", "b"]
+    names = [
+        unicodedata.normalize("NFC", "Crème brûlée dessert 250g"),
+        "Vanilla pudding 250g",
+    ]
+    idx = Bm25Index(ids, names)
+    query = unicodedata.normalize("NFD", "Crème brûlée 250g")
+    top = idx.search(query, k=1)
+    assert top[0][0] == "a", (
+        f"Expected NFD query to match NFC candidate 'a', got '{top[0][0]}'"
+    )
 
 
 def test_bm25_matches_across_unit_whitespace_variants():
