@@ -65,6 +65,7 @@ def sweep_alpha(
 def pr_curve(
     scored_predictions: list[tuple[float, bool]],
     thresholds: Iterable[float],
+    no_match_scores: Iterable[float] = (),
 ) -> list[tuple[float, float, float]]:
     """Precision/recall of the accept-the-top-1 decision over a threshold sweep.
 
@@ -78,6 +79,16 @@ def pr_curve(
       * FP — accepted but wrong
       * FN — rejected (a gold match existed but we declined to commit)
 
+    ``no_match_scores`` is the rank-1 score of each query that has *no* gold
+    counterpart in the catalog — a routine case in cross-retailer matching,
+    where one side lists products the other never carried. These queries have
+    no correct answer, so any accept is a false positive and any decline a true
+    negative; each ``score >= t`` therefore adds one FP without touching recall
+    (there is no gold to recover). Passing them makes precision reflect the real
+    false-accept rate instead of assuming every query has a match — the failure
+    mode a gold-only sweep is blind to. Defaults to empty for backward
+    compatibility (the gold-only curve).
+
     Returns ``(threshold, precision, recall)`` per threshold, where
     ``precision = TP / (TP + FP)`` and ``recall = TP / (queries with gold)``.
     Precision is reported as 1.0 when nothing is accepted (vacuously no wrong
@@ -85,10 +96,12 @@ def pr_curve(
     the tool the README's "pick the threshold from a labelled set" note needs.
     """
     total_with_gold = len(scored_predictions)
+    no_match_scores = list(no_match_scores)
     rows: list[tuple[float, float, float]] = []
     for t in thresholds:
         tp = sum(1 for s, correct in scored_predictions if s >= t and correct)
         fp = sum(1 for s, correct in scored_predictions if s >= t and not correct)
+        fp += sum(1 for s in no_match_scores if s >= t)
         accepted = tp + fp
         precision = tp / accepted if accepted else 1.0
         recall = tp / total_with_gold if total_with_gold else 0.0

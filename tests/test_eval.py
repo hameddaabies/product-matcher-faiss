@@ -122,6 +122,29 @@ def test_pr_curve_empty_predictions():
     assert rows == [(0.5, 1.0, 0.0)]
 
 
+def test_pr_curve_no_match_accept_counts_as_false_positive():
+    """A query with no gold match that clears the threshold hurts precision.
+
+    One correct gold hit at 0.8 plus one no-match query whose nearest neighbour
+    also scores 0.8: at t=0.5 both are accepted, so precision = 1 TP / 2 accepts.
+    Recall stays 1.0 — the no-match query is not part of the recall base.
+    """
+    rows = pr_curve([(0.8, True)], [0.5], no_match_scores=[0.8])
+    assert rows == [(0.5, 0.5, 1.0)]
+
+
+def test_pr_curve_no_match_below_threshold_is_declined():
+    """Raising the threshold above the no-match score removes its false positive."""
+    rows = pr_curve([(0.9, True)], [0.85], no_match_scores=[0.6])
+    assert rows == [(0.85, 1.0, 1.0)]
+
+
+def test_pr_curve_no_match_scores_default_empty_is_backward_compatible():
+    """Omitting no_match_scores reproduces the original gold-only curve."""
+    preds = [(0.8, True), (0.8, False)]
+    assert pr_curve(preds, [0.5]) == pr_curve(preds, [0.5], no_match_scores=[])
+
+
 # ---------------------------------------------------------------------------
 # best_threshold — collapse the PR sweep into one recommended operating point.
 # ---------------------------------------------------------------------------
