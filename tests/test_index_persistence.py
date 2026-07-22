@@ -60,3 +60,22 @@ def test_add_rejects_ids_vecs_count_mismatch():
     idx = HnswIndex(dim)
     with pytest.raises(AssertionError, match="count mismatch"):
         idx.add(["only", "three", "ids"], vecs)
+
+
+def test_search_k_larger_than_index_drops_padding_sentinels():
+    """k > ntotal must return only real hits, never a phantom from the -1 pad.
+
+    FAISS fills the unused slots of an over-large k request with row ``-1``.
+    Unguarded, ``self._ids[-1]`` would resolve that sentinel to the *last*
+    id, silently duplicating it as a fake neighbour — so the guard's job is
+    to yield exactly the two indexed items, with no repeats.
+    """
+    dim = 8
+    ids = ["a", "b"]
+    idx = HnswIndex(dim)
+    idx.add(ids, _make_unit_vecs(len(ids), dim))
+
+    hits = idx.search(_make_unit_vecs(1, dim, seed=1), k=5)[0]
+
+    assert len(hits) == len(ids)
+    assert {pid for pid, _ in hits} == set(ids)
