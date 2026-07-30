@@ -20,6 +20,22 @@ class MatchHit:
     cosine_score: float
 
 
+def rank_hits(hits: list[MatchHit]) -> list[MatchHit]:
+    """Order candidates best-first, breaking score ties on ``id``.
+
+    Score alone is not a total order. Cross-retailer catalogs routinely carry
+    two rows under the same product name, and those score bitwise-identically
+    on both the lexical and the semantic side. Because
+    :meth:`HybridMatcher.match` pools candidates through a ``set`` union, a
+    score-only sort leaves tied candidates in ``set`` iteration order — which
+    depends on the per-process ``PYTHONHASHSEED`` and so changes between runs.
+    ``best_match`` would then commit to a different product id each run, and a
+    threshold swept on one run would not reproduce on the next. Ids are unique
+    within the pool, so ``(-score, id)`` is a stable total order.
+    """
+    return sorted(hits, key=lambda h: (-h.score, h.id))
+
+
 def accept_top1(hits: list[MatchHit], threshold: float) -> MatchHit | None:
     """Apply the accept/decline decision to a *ranked* candidate list.
 
@@ -81,8 +97,7 @@ class HybridMatcher:
                     cosine_score=sem,
                 )
             )
-        hits.sort(key=lambda h: h.score, reverse=True)
-        return hits[:top_n]
+        return rank_hits(hits)[:top_n]
 
     def best_match(self, query: str, threshold: float = 0.0) -> MatchHit | None:
         """Return the single best candidate, or ``None`` if it scores below ``threshold``.

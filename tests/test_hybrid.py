@@ -6,7 +6,7 @@ For the embedding-dependent tests, run the demo script.
 import unicodedata
 
 from matcher.bm25 import Bm25Index, tokenize
-from matcher.hybrid import MatchHit, accept_top1
+from matcher.hybrid import MatchHit, accept_top1, rank_hits
 
 
 def test_tokenize_basic():
@@ -208,3 +208,38 @@ def test_accept_top1_threshold_is_inclusive():
 
 def test_accept_top1_empty_candidates_declines():
     assert accept_top1([], threshold=0.0) is None
+
+
+# ---------------------------------------------------------------------------
+# rank_hits — reproducible ranking.
+#
+# match() pools candidates through a set union, so tied scores used to come
+# out in PYTHONHASHSEED-dependent order and best_match() would commit to a
+# different id run-to-run. These tests pin the ordering contract.
+# ---------------------------------------------------------------------------
+
+
+def test_rank_hits_orders_by_score_descending():
+    ranked = rank_hits([_hit("a", 0.2), _hit("b", 0.9), _hit("c", 0.5)])
+    assert [h.id for h in ranked] == ["b", "c", "a"]
+
+
+def test_rank_hits_breaks_score_ties_on_id():
+    """Equal-scoring candidates rank by id, not by input/set order.
+
+    Eight tied hits fed in descending-id order: an implementation that keeps
+    incoming order would return them reversed.
+    """
+    tied = [_hit(pid, 0.5) for pid in ["h", "g", "f", "e", "d", "c", "b", "a"]]
+    assert [h.id for h in rank_hits(tied)] == ["a", "b", "c", "d", "e", "f", "g", "h"]
+
+
+def test_rank_hits_is_independent_of_input_order():
+    """The reproducibility contract: permuting the pool cannot change the winner.
+
+    Two tied top candidates plus a lower one — every arrival order must yield
+    the same ranking, which is what makes a swept threshold reproducible.
+    """
+    a, b, c = _hit("a", 0.8), _hit("b", 0.8), _hit("c", 0.3)
+    for pool in ([a, b, c], [b, a, c], [c, b, a], [c, a, b]):
+        assert [h.id for h in rank_hits(pool)] == ["a", "b", "c"]
