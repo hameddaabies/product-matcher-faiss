@@ -61,12 +61,15 @@ product-matcher-faiss/
 │   ├── index.py          # FAISS HNSW index + ID mapping
 │   ├── bm25.py           # BM25 candidate generator
 │   ├── hybrid.py         # merge + score
+│   ├── eval.py           # precision@1/recall@5, alpha sweep, PR curve
 │   └── demo.py           # end-to-end runnable demo
 ├── fixtures/
 │   ├── retailer_a.json
 │   └── retailer_b.json
 ├── tests/
-│   └── test_hybrid.py
+│   ├── test_hybrid.py
+│   ├── test_eval.py
+│   └── test_index_persistence.py
 ├── requirements.txt
 └── README.md
 ```
@@ -77,6 +80,7 @@ product-matcher-faiss/
 - **HNSW parameters** — `M=32, efConstruction=200, efSearch=64` is a solid default for <1M items. Bump `efSearch` to trade latency for recall.
 - **BM25 weight** — the hybrid score is `α·cosine + (1-α)·bm25_norm`. Start at `α=0.5`. Raise it for paraphrase-heavy domains (apparel descriptions), lower it for spec-heavy domains (electronics).
 - **Threshold** — pick it from a hand-labelled validation set, not a default. Wrong defaults cause silent recall / precision cliffs. `python -m matcher.eval` prints a precision/recall curve over the accept threshold to read the right operating point off. Then apply it with `HybridMatcher.best_match(query, threshold)`, which returns the top candidate or `None` when nothing clears the bar.
+- **Restarts** — `HnswIndex.save(path)` / `HnswIndex.load(path)` round-trip the index (via `faiss.write_index`) and the external ID mapping, so a process restart doesn't mean re-embedding the whole catalog.
 
 ## What this isn't
 
@@ -84,7 +88,6 @@ This isn't a complete production matching system. In production you also need:
 - De-duplication within each retailer before cross-matching
 - Brand / category gating (don't compare a TV to shampoo)
 - Active learning loop to label ambiguous pairs
-- Persisted index that survives process restarts
 - Monitoring on match-rate drift
 
 I've built all of those for clients; this repo shows the core algorithmic shape.
