@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -109,3 +111,52 @@ class HybridMatcher:
         non-empty result, preserving the old "always return the nearest" shape.
         """
         return accept_top1(self.match(query, top_n=1), threshold)
+
+    def save(self, path: str | Path) -> None:
+        """Persist everything needed to restore matching without re-embedding.
+
+        Writes the FAISS binary + id list (via :meth:`HnswIndex.save`)
+        alongside a ``<path>.matcher.json`` sidecar holding ``alpha``,
+        ``top_k_each``, and the id→name mapping. BM25 rebuilds from those
+        names on :meth:`load` — cheap, no model involved — so only the
+        embedding *model* needs loading to serve new queries, not the whole
+        catalog re-embedded. This is the restart path the README's "Restarts"
+        note promises; ``HnswIndex.save``/``load`` alone leaves BM25 and the
+        id→name lookup for the caller to reconstruct by hand.
+        """
+        path = Path(path)
+        self.hnsw.save(path)
+        _matcher_path(path).write_text(
+            json.dumps(
+                {
+                    "alpha": self.alpha,
+                    "top_k_each": self.top_k_each,
+                    "id_to_name": self._id_to_name,
+                }
+            )
+        )
+
+    @classmethod
+    def load(cls, path: str | Path, *, embedder: Embedder | None = None) -> "HybridMatcher":
+        """Reconstruct a :class:`HybridMatcher` previously written by :meth:`save`.
+
+        Restores the FAISS HNSW index from disk and rebuilds BM25 from the
+        saved names, skipping catalog re-embedding entirely. Pass ``embedder``
+        to reuse an already-loaded model; otherwise a fresh one is loaded.
+        """
+        path = Path(path)
+        state = json.loads(_matcher_path(path).read_text())
+        id_to_name: dict[str, str] = state["id_to_name"]
+
+        obj = cls.__new__(cls)
+        obj.alpha = state["alpha"]
+        obj.top_k_each = state["top_k_each"]
+        obj._id_to_name = id_to_name
+        obj.embedder = embedder or Embedder()
+        obj.hnsw = HnswIndex.load(path)
+        obj.bm25 = Bm25Index(list(id_to_name.keys()), list(id_to_name.values()))
+        return obj
+
+
+def _matcher_path(path: Path) -> Path:
+    return path.with_name(path.name + ".matcher.json")
