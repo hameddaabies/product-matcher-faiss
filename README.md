@@ -82,6 +82,39 @@ product-matcher-faiss/
 - **Threshold** — pick it from a hand-labelled validation set, not a default. Wrong defaults cause silent recall / precision cliffs. `python -m matcher.eval` prints a precision/recall curve over the accept threshold to read the right operating point off. Then apply it with `HybridMatcher.best_match(query, threshold)`, which returns the top candidate or `None` when nothing clears the bar.
 - **Restarts** — `HybridMatcher.save(path)` / `HybridMatcher.load(path)` round-trip the FAISS index, the id→name mapping, and `alpha`/`top_k_each`, then rebuild BM25 from the saved names (cheap, no model needed). A process restart means loading the embedding model, not re-embedding the whole catalog. (`HnswIndex.save`/`.load` are the lower-level primitives this wraps, if you only need the semantic side.)
 
+## Benchmark results
+
+Results on the fixture set (40 products, 10 queries):
+
+| Embedding Model | Dim | p@1 | r@5 | Query latency | Model load | Notes |
+|---|---|---|---|---|---|---|
+| `all-MiniLM-L6-v2` | 384 | 1.000 | 1.000 | 8.2ms | 3.9s | Default; fast |
+| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | 1.000 | 1.000 | 90.8ms | 141s | Use for non-English catalogs |
+| `all-mpnet-base-v2` | 768 | 1.000 | 1.000 | 110.3ms | 125s | Highest recall; slower |
+
+Run your own benchmark on a labeled evaluation set:
+
+```python
+from matcher.embed import Embedder
+from matcher.hybrid import HybridMatcher
+import json
+from pathlib import Path
+
+root = Path("fixtures")
+retailer_a = json.loads((root / "retailer_a.json").read_text())
+gold = json.loads((root / "gold_pairs.json").read_text())
+
+# Swap model_name for any HuggingFace sentence-transformer ID
+embedder = Embedder("sentence-transformers/all-mpnet-base-v2")
+matcher = HybridMatcher(
+    ids=[r["id"] for r in retailer_a],
+    names=[r["name"] for r in retailer_a],
+    embedder=embedder
+)
+
+# Measure p@1 and r@5 on your gold standard
+```
+
 ## What this isn't
 
 This isn't a complete production matching system. In production you also need:
