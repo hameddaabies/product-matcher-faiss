@@ -69,6 +69,7 @@ product-matcher-faiss/
 ├── tests/
 │   ├── test_hybrid.py
 │   ├── test_eval.py
+│   ├── test_embed.py
 │   └── test_index_persistence.py
 ├── requirements.txt
 └── README.md
@@ -80,6 +81,7 @@ product-matcher-faiss/
 - **HNSW parameters** — `M=32, efConstruction=200, efSearch=64` is a solid default for <1M items. Bump `efSearch` to trade latency for recall.
 - **BM25 weight** — the hybrid score is `α·cosine + (1-α)·bm25_norm`. Start at `α=0.5`. Raise it for paraphrase-heavy domains (apparel descriptions), lower it for spec-heavy domains (electronics).
 - **Threshold** — pick it from a hand-labelled validation set, not a default. Wrong defaults cause silent recall / precision cliffs. `python -m matcher.eval` prints a precision/recall curve over the accept threshold to read the right operating point off. Then apply it with `HybridMatcher.best_match(query, threshold)`, which returns the top candidate or `None` when nothing clears the bar.
+- **Large catalogs** — `HybridMatcher.__init__` embeds every name in one call, which needs the whole `(n, dim)` float32 array resident. Past the point where that fits, build the index directly: `Embedder.encode_batches(names, batch_size)` takes a lazy iterable (a DB cursor, a JSONL reader) and yields one normalized block at a time, so peak memory is a batch rather than the catalog. Feed each block to `HnswIndex.add` with its slice of ids.
 - **Restarts** — `HybridMatcher.save(path)` / `HybridMatcher.load(path)` round-trip the FAISS index, the id→name mapping, and `alpha`/`top_k_each`, then rebuild BM25 from the saved names (cheap, no model needed). A process restart means loading the embedding model, not re-embedding the whole catalog. (`HnswIndex.save`/`.load` are the lower-level primitives this wraps, if you only need the semantic side.)
 
 ## Benchmark results
