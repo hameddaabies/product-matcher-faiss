@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the floor: the codebase uses PEP 604 (``X | None``) unions.
+        python-version: ["3.10", "3.12"]
+
+    env:
+      # torch, sklearn and faiss each ship their own OpenMP runtime; faiss
+      # crashes in IndexHNSWFlat.search when more than one thread is active.
+      OMP_NUM_THREADS: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        # CPU-only torch wheels: sentence-transformers otherwise pulls the
+        # default CUDA build (several GB) onto a runner with no GPU. The suite
+        # uses stub embedders, so no model weights are downloaded either.
+        run: >-
+          pip install -r requirements.txt
+          --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Run tests
+        run: python -m pytest -q
